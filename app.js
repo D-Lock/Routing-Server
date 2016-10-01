@@ -2,40 +2,43 @@ var io = require('socket.io').listen(1337);
 var dl = require('delivery');
 var fs = require('fs');
 var firebase = require('firebase');
+var crypto = require('crypto');
 
-// Get reference to firebase database
+// Authenticate with firebase
 var config = {
     apiKey: 'AIzaSyD--ACvhpg6AtGFXhdKwMgn8Lv8Q2oMTT4',
     authDomain: 'd-lock.firebaseapp.com',
     databaseURL: 'https://d-lock.firebaseio.com'
 };
 firebase.initializeApp(config);
-var database = firebase.database();
 
 var connections = {};
 
 io.on('connection', function (socket) {
     var self = this;
-    var email = "";
-    var mac = "";
+    var user;
+
+    console.log("User has connected");
 
     // Handle new connections
     socket.on('user.info', function (user) {
         // Store details for this connection
-        self.email = user.email;
-        self.mac = user.mac;
+        self.user = user;
 
+        console.log(user.email);
+        console.log(user.mac);
+        /* // DEBUG
         // Update connections dictionary
-        if (user.email in connections) {
-            connections[user.email].push(user.email);
+        if (user in connections) {
+            connections[user].push(socket);
         }
         else {
-            connections.push({
-                key: user.email,
-                value: user.mac
-            });
+            connections[user] = [socket];
         }
+        */
     });
+
+    // TODO handle disconnect - remove MAC from connections
 
     // Listen for incoming for files
     var delivery = dl.listen(socket);
@@ -49,16 +52,70 @@ io.on('connection', function (socket) {
                 console.log('File saved');
             }
         });
-        // Ensure that we are connected
-        checkMACs(socket, self.email)
+
+        // Load the data and act accordingly
+        firebase.database().ref('users/' + user.email).once('value').then(function (snapshot) {
+            var refmacs = snapshot.val().mac;
+            if (checkMac(user.email, refmacs)) {
+                distribute(user, socket, file);
+            }
+        });
     });
+
 
 });
 
-function checkMACs(socket, email) {
-    //L
+
+// 'socket' is the connection that send the file to the server
+function distribute(user, socket, file) {
+
+    // TODO split file with David's script and deposit chunks in a dir - subdir
+    var chunks = fs.readdirSync('subdir');
+    var sockets = connections[user];
+
+    // Check if MAC number matches chunks
+    if (chunks.length != sockets.length) {
+        socket.emit('error.mac.num', {errorMessage: "Number of chunks did not match number of MAC addresses"})
+    }
+
+    // Send chunks
+    for (i = 0; i < chunks.length; i++) {
+        var delivery = dl.listen(sockets[i]);
+        delivery.on('delivery.connect', function (delivery) {
+
+            // Try to send
+            delivery.send({
+                name: chunk[i],
+                path: chunk[i]
+            });
+
+            // If success, store routing info in database
+            delivery.on('send.success', function (uid) {
+                // Hash the file name for storage
+                var hash = crypto.createHash('md5').update(file.name).digest('hex');
+            });
+        })
+    }
+
+}
+
+function checkMAC(email, referenceMACs) {
+    var active = connections[email];
+
+    // Check if active and reference are the same
+    same = true;
+    for (i = 0; i < referenceMACs.length; i++) {
+        if (active.indexOf(referenceMACs[i]) == -1) {
+            same = false
+        }
+    }
+
+    return same;
 }
 
 function splitAndSend(delivery, file) {
+    // TODO split file with David's script
 
+    // Chunks are now in subdirectory - subdir
+    var chunks = fs.readFileSync('subdir');
 }
