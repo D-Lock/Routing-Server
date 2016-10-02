@@ -1,2 +1,4 @@
 .idea
 extra-git
+node_modules/
+downloads/
