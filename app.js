@@ -17,6 +17,7 @@ firebase.initializeApp(config);
 
 var connections = {}; // id :
 var users = {};
+var requests = {};
 
 io.on('connection', function (socket) {
     console.log("User has connected");
@@ -54,9 +55,26 @@ io.on('connection', function (socket) {
             var user = users[socket.id];
             var userConnects = connections[user.id];
             if(checkMAC(user.id, macs)){
+                var request = {
+                    origin: user.mac,
+                    hash: hash,
+                    parts: macs.length,
+                    current: 0
+                };
+
+                if(user.id in requests){
+                    requests[user.id].push(request);
+                }
+                else{
+                    requests[user.id] =  [request];
+                }
+
                 userConnects.forEach(function(connection){
-                    connection.socket.emit('request.part', 
-                        {fileName: hash + '_' + val[connection.user.mac], hash: hash})
+                    connection.socket.emit('request.part', {
+                        fileName: hash + '_' + val[connection.user.mac], 
+                        hash: hash,
+                        userId: user.id,
+                     });
                 });
             }
         });
@@ -130,7 +148,15 @@ function receivePart(file, socket) {
             }
             else {
                 console.log('File saved');
-                
+                console.log(file.params);
+                var userRequests = requests[file.params.userId];
+                userRequests.forEach(function(request){
+                    if(request.hash !== hash) return;
+                    ++request.current;
+                    if(request.current === request.parts){
+                        mergeParts(request, file.params.userId);
+                    }
+                });
             }
         });
     });
@@ -161,6 +187,21 @@ function createParts(user, socket, file) {
 
                 resolve(chunks);
             });
+        });
+    });
+}
+
+function mergeParts(request, userId) {
+    var userConnects = connections[user.id];
+
+    //Clear the folder
+    fse.emptyDir('downloads/temp', function(err) {
+        if(err) reject(err);
+        var process = spawn('python', ["Tools/merge_file.py", "downloads/" + request.hash + "/" + request.hash + "_1", 
+            request.parts, "-o", "downloads/" + request.hash]);
+
+        process.on('close', function (code) {
+            
         });
     });
 }
