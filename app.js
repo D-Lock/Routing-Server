@@ -62,12 +62,7 @@ io.on('connection', function (socket) {
                     current: 0
                 };
 
-                if(user.id in requests){
-                    requests[user.id].push(request);
-                }
-                else{
-                    requests[user.id] =  [request];
-                }
+                requests[hash] =  request;
 
                 userConnects.forEach(function(connection){
                     connection.socket.emit('request.part', {
@@ -86,8 +81,6 @@ io.on('connection', function (socket) {
     // Listen for incoming for files - Create file mode
     var delivery = dl.listen(socket);
     delivery.on('receive.success', function (file) {
-
-
         console.log("Received file"); // DEBUG
 
         console.log(file.params.mode); // DEBUG
@@ -98,14 +91,13 @@ io.on('connection', function (socket) {
         else if(file.params.mode === 'part'){
             receivePart(file, socket);
         }
-        
-
     });
 });
 
 function receiveFile(file, socket) {
     var hash = (Math.random() + 1).toString(36).substr(2,32);
-    fs.writeFile("downloads/" + hash, file.buffer, function (err) {
+    fs.mkdir("downloads/full", function(){
+        fs.writeFile("downloads/full/" + hash, file.buffer, function (err) {
             if (err) {
                 console.log('Could not write initial data file');
             }
@@ -116,7 +108,8 @@ function receiveFile(file, socket) {
                 firebase.database().ref('files/' + user.id).child(hash).set({
                     path: file.name,
                     size: 0, 
-                    type: "txt"});
+                    type: "txt"
+                });
 
                 // Load the data and act accordingly
                 firebase.database().ref('clients').child(users[socket.id].id).once('value').then(function (snapshot) {
@@ -126,18 +119,18 @@ function receiveFile(file, socket) {
                     });
                     console.log("Refmacs: ", refmacs); // DEBUG
                     if (checkMAC(user.id, refmacs)) {
-                        createParts(user, socket, file).then(function(parts) {
+                        createParts(user, socket, file, hash).then(function(parts) {
                             distributeParts(user, parts, hash);
                         }).catch(function(err) {
                             console.error(err);
                         });
-                        //distribute(users[socket.id], socket, file, delivery);
                     }
                 }).catch(function (err) {
                     console.log(err); // DEBUG
                 });
             }
         });
+    });
 }
 
 function receivePart(file, socket) {
@@ -148,60 +141,80 @@ function receivePart(file, socket) {
             }
             else {
                 console.log('File saved');
-                console.log(file.params);
-                var userRequests = requests[file.params.userId];
-                userRequests.forEach(function(request){
-                    if(request.hash !== hash) return;
-                    ++request.current;
-                    if(request.current === request.parts){
-                        mergeParts(request, file.params.userId);
-                    }
-                });
+                var user = users[socket.id];
+                var request = requests[file.params.hash];
+
+                ++request.current;
+                if(request.current === request.parts){
+                    mergeParts(request, user);
+                }
             }
         });
     });
-    
 }
 
-function createParts(user, socket, file) {
+function createParts(user, socket, file, hash) {
     return new Promise(function(resolve, reject) {
         var userConnects = connections[user.id];
 
-        //Clear the folder
-        fse.emptyDir('downloads/temp', function(err) {
-            if(err) reject(err);
-            var process = spawn('python', ["Tools/split_file.py", "downloads/" + file.name, userConnects.length, "-o",
-            "downloads/temp/split"]);
+        fs.mkdir("downloads/" + hash, function(err) {
+            if(err) return reject("Could not make the new parts directory", hash);
 
-            process.on('close', function (code) {
-                var chunks = fs.readdirSync('downloads/temp');
+            var process = spawn('python', ["Tools/split_file.py", "downloads/full/" + hash, userConnects.length, "-o",
+                "downloads/" + hash + "/split"]);
 
-                // DEBUG
-                console.log(chunks.length, userConnects.length);
+                process.on('close', function (code) {
+                    //Subtract 1 to remove uploaded file
+                    var chunks = fs.readdirSync('downloads/' + hash);
 
-                // Check if MAC number matches chunks
-                if (chunks.length != userConnects.length) {
-                    socket.emit('error.mac.num', {errorMessage: "Number of chunks did not match number of MAC addresses"})
-                    return reject('error.mac.num')
-                }
+                    // DEBUG
+                    console.log(chunks.length, userConnects.length);
 
-                resolve(chunks);
-            });
+                    // Check if MAC number matches chunks
+                    if (chunks.length != userConnects.length) {
+                        socket.emit('error.mac.num', {errorMessage: "Number of chunks did not match number of MAC addresses"})
+                        return reject('error.mac.num')
+                    }
+
+                    resolve(chunks);
+                });
         });
     });
 }
 
-function mergeParts(request, userId) {
+function mergeParts(request, user) {
     var userConnects = connections[user.id];
 
-    //Clear the folder
-    fse.emptyDir('downloads/temp', function(err) {
-        if(err) reject(err);
-        var process = spawn('python', ["Tools/merge_file.py", "downloads/" + request.hash + "/" + request.hash + "_1", 
-            request.parts, "-o", "downloads/" + request.hash]);
+    var process = spawn('python', ["Tools/merge_file.py", "downloads/" + request.hash + "/" + request.hash + "_1", 
+        request.parts, "-o", "downloads/" + request.hash + "/" + request.hash]);
 
-        process.on('close', function (code) {
-            
+    process.on('close', function (code) {
+        var origin = request.origin;
+        userConnects.forEach(function(connection) {
+            if(connection.user.mac !== request.origin) return;
+
+            var delivery = dl.listen(connection.socket);
+            delivery.connect();
+
+            firebase.database().ref('files/' + user.id).child(request.hash).once('value').then(function(snapshot) {
+                var file = snapshot.val();
+                delivery.send({
+                    name: file.path,
+                    path: "downloads/" + request.hash + "/" + request.hash,
+                    params: {
+                        mode: 'download'
+                    }
+                });
+            });
+
+            delivery.on('send.success', function() {
+                fse.remove("downloads/" + request.hash, function(err) {
+                    if(err) console.error("Error deleting hash folder");
+                });
+
+                firebase.database().ref('routing').child(request.hash).remove();
+                firebase.database().ref('files').child(user.id).child(request.hash).remove();
+            });
         });
     });
 }
@@ -221,11 +234,13 @@ function distributeParts(user, parts, hash) {
             console.log("Sending Started");
         });
 
-        console.log(path.join(__dirname, "/downloads/temp/", parts[i]));
         // Try to send
         delivery.send({
             name: hash + "_" + (i+1),
-            path: path.join(__dirname, "/downloads/temp/", parts[i])
+            path: path.join(__dirname, "/downloads/", hash, parts[i]),
+            params: {
+                mode: "part"
+            }
         });
         
         routingTable[userConnections[i].user.mac] = i+1;
