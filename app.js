@@ -43,11 +43,37 @@ io.on('connection', function (socket) {
 
     // TODO handle disconnect - remove MAC from connections
 
-    // Listen for incoming for files
+    // Handle file requests
+    socket.on('request.file', function(hash) {
+        firebase.database().ref('routing').child(hash).once('value').then(function (snapshot) {
+            // Get list of mac addresses from database
+            var val = snapshot.val();
+            var refmacs = Object.keys(val.all).map(function (key) {
+                return val.all[key];
+            });
+
+            // Verify that we have a connection with all required macs
+            var id = users[socket.id];
+            if (checkMAC(id, refmacs)) {
+                // Request parts from every matching mac address
+                if (connections[id].user.mac in refmacs) {
+                    connections[id].socket.emit('part')
+                }
+            }
+        })
+    });
+
+    // Handle incomping parts
+
+
+    // Listen for incoming for files - Create file mode
     var delivery = dl.listen(socket);
-    delivery.on('receive.success', function (file) {
+    delivery.on('receive.success', function (file, params) {
+
 
         console.log("Received file"); // DEBUG
+
+        console.log(file.params); // DEBUG
 
         var params = file.params;
         fs.writeFile("downloads/" + file.name, file.buffer, function (err) {
@@ -90,11 +116,14 @@ function createParts(user, socket, file) {
         //Clear the folder
         fse.emptyDir('downloads/temp', function(err) {
             if(err) reject(err);
-            var process = spawn('python', ["Tools/split_file.py", "downloads/" + file.name, userConnects.length, "-o",
+            var process = spawn('python3', ["Tools/split_file.py", "downloads/" + file.name, userConnects.length, "-o",
             "downloads/temp/split.txt"]);
 
             process.on('close', function (code) {
                 var chunks = fs.readdirSync('downloads/temp');
+
+                // DEBUG
+                console.log(chunks.length, userConnects.length);
 
                 // Check if MAC number matches chunks
                 if (chunks.length != userConnects.length) {
@@ -108,8 +137,7 @@ function createParts(user, socket, file) {
     });
 }
 
-// 'socket' is the connection that send the file to the server
-function distributeParts(user, parts, socket) {
+function distributeParts(user, parts) {
     // Generate the hash for the filename
 
     var delivery = dl.listen(socket);
@@ -133,7 +161,7 @@ function distributeParts(user, parts, socket) {
         // If success, store routing info in database
         delivery.on('send.success', function (uid) {
             console.log("Succesful send"); // DEBUG
-            firebase.database().ref('routing/' + hash).child(userConnects[i].user.mac).set(chunks[i]);
+            firebase.database().ref('routing/' + hash).child(userConnects[i].user.mac).set(parts[i]);
         });
     }
 
