@@ -3,6 +3,7 @@ var dl = require('delivery');
 var fs = require('fs');
 var firebase = require('firebase');
 var crypto = require('crypto');
+var spawn = require('child_process').spawn;
 
 // Authenticate with firebase
 var config = {
@@ -12,30 +13,30 @@ var config = {
 };
 firebase.initializeApp(config);
 
-var connections = {};
+var connections = {}; // id :
+var users = {};
 
 io.on('connection', function (socket) {
-    var self = this;
-    var user;
-
     console.log("User has connected");
 
-    // Handle new connections
-    socket.on('user.info', function (user) {
+    // Process user info
+    socket.on('user.info', function (newUser) {
         // Store details for this connection
-        self.user = user;
+        users[socket.id] = newUser;
 
-        console.log(user.email);
-        console.log(user.mac);
-        /* // DEBUG
-        // Update connections dictionary
-        if (user in connections) {
-            connections[user].push(socket);
+
+        var newConn = {
+            user: newUser,
+            socket: socket
+        };
+        console.log(newConn.user);
+
+        if (newUser.id in connections) {
+            connections[newUser.id].push(newConn);
         }
         else {
-            connections[user] = [socket];
+            connections[newUser.id] = [newConn];
         }
-        */
     });
 
     // TODO handle disconnect - remove MAC from connections
@@ -43,26 +44,34 @@ io.on('connection', function (socket) {
     // Listen for incoming for files
     var delivery = dl.listen(socket);
     delivery.on('receive.success', function (file) {
+
+        console.log("Received file"); // DEBUG
+
         var params = file.params;
-        fs.writeFile(file.name, file.buffer, function (err) {
+        fs.writeFile("downloads/" + file.name, file.buffer, function (err) {
             if (err) {
                 console.log('Could not write initial data file');
             }
             else {
                 console.log('File saved');
+
+                // Load the data and act accordingly
+                firebase.database().ref('clients').child(users[socket.id].id).once('value').then(function (snapshot) {
+                    var val = snapshot.val();
+                    var refmacs = Object.keys(val.all).map(function (key) {
+                        return val.all[key];
+                    });
+                    console.log("Refmacs: ", refmacs); // DEBUG
+                    if (checkMAC(users[socket.id].id, refmacs)) {
+                        distribute(users[socket.id], socket, file);
+                    }
+                }).catch(function (err) {
+                    console.log(err); // DEBUG
+                });
             }
         });
 
-        // Load the data and act accordingly
-        firebase.database().ref('users/' + user.email).once('value').then(function (snapshot) {
-            var refmacs = snapshot.val().mac;
-            if (checkMac(user.email, refmacs)) {
-                distribute(user, socket, file);
-            }
-        });
     });
-
-
 });
 
 
@@ -70,52 +79,83 @@ io.on('connection', function (socket) {
 function distribute(user, socket, file) {
 
     // TODO split file with David's script and deposit chunks in a dir - subdir
-    var chunks = fs.readdirSync('subdir');
-    var sockets = connections[user];
 
-    // Check if MAC number matches chunks
-    if (chunks.length != sockets.length) {
-        socket.emit('error.mac.num', {errorMessage: "Number of chunks did not match number of MAC addresses"})
-    }
+    var userConnects = connections[user.id];
 
-    // Send chunks
-    for (i = 0; i < chunks.length; i++) {
-        var delivery = dl.listen(sockets[i]);
-        delivery.on('delivery.connect', function (delivery) {
+    // DEBUG
+    console.log("USER INFO");
+    console.log(userConnects);
+    console.log(connections);
+    console.log(user);
 
-            // Try to send
-            delivery.send({
-                name: chunk[i],
-                path: chunk[i]
-            });
+    var process = spawn('python3', ["split_file.py", "downloads/" + file.name, userConnects.length, "-o",
+        "downloads/temp/split.txt"]);
 
-            // If success, store routing info in database
-            delivery.on('send.success', function (uid) {
-                // Hash the file name for storage
-                var hash = crypto.createHash('md5').update(file.name).digest('hex');
-            });
-        })
-    }
+    process.on('close', function (code) {
+        console.log(file.name); // DEBUG
+        console.log(userConnects.length); // DEBUG
+
+        var chunks = fs.readdirSync('downloads/temp');
+
+        console.log("Chunk names: ", chunks); // DEBUG
+
+        // Check if MAC number matches chunks
+        if (chunks.length != userConnects.length) {
+            socket.emit('error.mac.num', {errorMessage: "Number of chunks did not match number of MAC addresses"})
+            console.error('error.mac.num')
+            return;
+        }
+
+        // Generate the hash for the filename
+        var hash = crypto.createHash('md5').update(file.name).digest('hex'); // FIXME how to ensure consistency in file name
+
+        // Send chunks
+        for (i = 0; i < chunks.length; i++) {
+            console.log("USER CONNECTS"); // DEBUG
+            console.log(userConnects); // DEBUG
+
+            var delivery = dl.listen(userConnects[i].socket);
+            delivery.connect();
+            delivery.on('delivery.connect', function (delivery) {
+                console.log("Delivery connected"); // DEBUG
+
+                // DEBUG
+                delivery.on('send.start', function (file) {
+                    console.log("Sending Started");
+                });
+
+                // Try to send
+                delivery.send({
+                    name: chunks[i],
+                    path: "downloads/temp/" + chunks[i]
+                });
+
+                // If success, store routing info in database
+                delivery.on('send.success', function (uid) {
+                    console.log("Succesful send"); // DEBUG
+                    firebase.database().ref('routing/' + hash).child(userConnects[i].user.mac).set(chunks[i]);
+                });
+            })
+        }
+
+        // TODO check if the hash for the file name has the same amount of children as mac addresses
+    });
 
 }
 
-function checkMAC(email, referenceMACs) {
-    var active = connections[email];
+function checkMAC(id, referenceMACs) {
+
+    var active = connections[id].map(function (conn) {
+        return conn.user.mac
+    });
 
     // Check if active and reference are the same
     same = true;
     for (i = 0; i < referenceMACs.length; i++) {
-        if (active.indexOf(referenceMACs[i]) == -1) {
+        if (active.indexOf(referenceMACs[i]) === -1) {
             same = false
         }
     }
 
     return same;
-}
-
-function splitAndSend(delivery, file) {
-    // TODO split file with David's script
-
-    // Chunks are now in subdirectory - subdir
-    var chunks = fs.readFileSync('subdir');
 }
