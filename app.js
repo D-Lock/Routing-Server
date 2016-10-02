@@ -88,7 +88,7 @@ function distribute(user, socket, file) {
     console.log(connections);
     console.log(user);
 
-    var process = spawn('python3', ["split_file.py", "downloads/" + file.name, userConnects.length, "-o",
+    var process = spawn('python', ["Tools/split_file.py", "downloads/" + file.name, userConnects.length, "-o",
         "downloads/temp/split.txt"]);
 
     process.on('close', function (code) {
