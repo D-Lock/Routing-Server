@@ -5,7 +5,11 @@ module.exports = function(config) {
 
   var logPath = path.join(__dirname, config.filePath)
 
-  fs.mkdirSync(logPath);
+  try {
+    fs.mkdirSync(logPath);
+  } catch(e) {
+    if ( e.code != 'EEXIST' ) throw e;
+  }
   
   return new winston.Logger({
     transports: [
