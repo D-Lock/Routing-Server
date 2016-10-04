@@ -1,5 +1,6 @@
 var dl = require('delivery');
 var fs = require('fs');
+var mkdirp = require('mkdirp');
 var fse = require('fs-extra');
 var path = require('path');
 var crypto = require('crypto');
@@ -18,7 +19,7 @@ var users = {};
 var requests = {};
 
 io.on('connection', function (socket) {
-  logger.info('User has initiated connection');
+  logger.info('User has initiated connection %s', socket.handshake.address);
 
   // Process user info
   socket.on(messages.received.userInfo, function (newUser) {
@@ -102,11 +103,11 @@ function receiveFile(file, socket) {
     file.name, user.id, user.mac);
 
   var hash = (Math.random() + 1).toString(36).substr(2,32);
-  fs.mkdir("downloads/full", function(){
+  mkdirp("downloads/full", function(){
     fs.writeFile("downloads/full/" + hash, file.buffer, function (err) {
       if (err) {
         logger.error('Could not write new upload %s', hash);
-        logger.erro(err);
+        logger.error(err);
         return;
       }
 
