@@ -1,19 +1,15 @@
-var io = require('socket.io').listen(1337);
+const config = require('./config/config.js');
+const logger = config.logger;
+const firebase = config.firebase;
+const messages = config.socket.messages;
+
+var io = require('socket.io').listen(config.socket.port);
 var dl = require('delivery');
 var fs = require('fs');
 var fse = require('fs-extra');
 var path = require('path');
-var firebase = require('firebase');
 var crypto = require('crypto');
 var spawn = require('child_process').spawn;
-
-// Authenticate with firebase
-var config = {
-    apiKey: 'AIzaSyD--ACvhpg6AtGFXhdKwMgn8Lv8Q2oMTT4',
-    authDomain: 'd-lock.firebaseapp.com',
-    databaseURL: 'https://d-lock.firebaseio.com'
-};
-firebase.initializeApp(config);
 
 var connections = {}; // id :
 var users = {};
@@ -23,7 +19,7 @@ io.on('connection', function (socket) {
     console.log("User has connected");
 
     // Process user info
-    socket.on('user.info', function (newUser) {
+    socket.on(messages.received.userInfo, function (newUser) {
         // Store details for this connection
         users[socket.id] = newUser;
 
@@ -45,7 +41,7 @@ io.on('connection', function (socket) {
     // TODO handle disconnect - remove MAC from connections
 
     // Handle file requests
-    socket.on('request.file', function(hash) {
+    socket.on(messages.received.fileRequest, function(hash) {
         console.log(hash);
         firebase.database().ref('routing').child(hash).once('value').then(function (snapshot) {
             // Get list of mac addresses from database
@@ -65,7 +61,7 @@ io.on('connection', function (socket) {
                 requests[hash] =  request;
 
                 userConnects.forEach(function(connection){
-                    connection.socket.emit('request.part', {
+                    connection.socket.emit(messages.sent.requestPart, {
                         fileName: hash + '_' + val[connection.user.mac], 
                         hash: hash,
                         userId: user.id,
@@ -80,7 +76,7 @@ io.on('connection', function (socket) {
 
     // Listen for incoming for files - Create file mode
     var delivery = dl.listen(socket);
-    delivery.on('receive.success', function (file) {
+    delivery.on(messages.received.receiveSuccess, function (file) {
         console.log("Received file"); // DEBUG
 
         console.log(file.params.mode); // DEBUG
@@ -172,8 +168,8 @@ function createParts(user, socket, file, hash) {
 
                     // Check if MAC number matches chunks
                     if (chunks.length != userConnects.length) {
-                        socket.emit('error.mac.num', {errorMessage: "Number of chunks did not match number of MAC addresses"})
-                        return reject('error.mac.num')
+                        socket.emit(messages.error.macNumber, {errorMessage: "Number of chunks did not match number of MAC addresses"});
+                        return reject(messages.error.macNumber);
                     }
 
                     resolve(chunks);
@@ -207,7 +203,7 @@ function mergeParts(request, user) {
                 });
             });
 
-            delivery.on('send.success', function() {
+            delivery.on(messages.received.sendSuccess, function() {
                 fse.remove("downloads/" + request.hash, function(err) {
                     if(err) console.error("Error deleting hash folder");
                 });
@@ -230,7 +226,7 @@ function distributeParts(user, parts, hash) {
         delivery.connect();
         console.log("Distributing")
         // DEBUG
-        delivery.on('send.start', function (file) {
+        delivery.on(messages.received.sendStart, function (file) {
             console.log("Sending Started");
         });
 
@@ -245,7 +241,7 @@ function distributeParts(user, parts, hash) {
         
         routingTable[userConnections[i].user.mac] = i+1;
         // If success, store routing info in database
-        delivery.on('send.success', function (uid) {
+        delivery.on(messages.received.sendSuccess, function (uid) {
             console.log("Successful send"); // DEBUG
         });
     }

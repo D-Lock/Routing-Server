@@ -1,0 +1,29 @@
+{
+  "logging": {
+    "filePath": "../logs/",
+    "fileName": "verbose.log"
+  },
+  "firebase": {
+    "apiKey": "AIzaSyD--ACvhpg6AtGFXhdKwMgn8Lv8Q2oMTT4",
+    "authDomain": "d-lock.firebaseapp.com",
+    "databaseURL": "https://d-lock.firebaseio.com"
+  },
+  "socket": {
+    "port": 1337,
+    "messages": {
+      "sent": {
+        "requestPart": "request.part",
+      },
+      "received": {
+        "userInfo": "user.info",
+        "fileRequest": "request.file",
+        "receiveSuccess": "receive.success",
+        "sendStart": "send.start",
+        "sendSuccess": "send.success",
+      },
+      "error": {
+        "macNumber": "error.mac.num"
+      }
+    }
+  }
+}
