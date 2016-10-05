@@ -1,3 +1,5 @@
+'use strict';
+
 var dl = require('delivery');
 var fs = require('fs');
 var mkdirp = require('mkdirp');
@@ -11,10 +13,11 @@ const firebase = config.firebase;
 const tables = config.firebaseTables;
 const messages = config.socket.messages;
 
-var io = require('socket.io').listen(config.socket.port);
-var spawn = require('child_process').spawn;
+const fileManipulation = require('./lib/fileManipulation.js');
 
-var connections = {}; // id :
+var io = require('socket.io').listen(config.socket.port);
+
+var connections = {};
 var users = {};
 var requests = {};
 
@@ -79,6 +82,10 @@ io.on('connection', function (socket) {
       } else {
         logger.error('Could not match MAC addresses for %s', user.id);
       }
+    })
+    .catch(function(err) {
+      logger.error("Could not get routing for file %s", hash);
+      logger.error(err);
     });
   });
 
@@ -97,6 +104,11 @@ io.on('connection', function (socket) {
   });
 });
 
+/**
+ * Handles the sockets receiving a full file upload
+ * @param {Object} file - The full file
+ * @param {Object} socket - The socket of the sender
+ */
 function receiveFile(file, socket) {
   var user = users[socket.id];
   logger.info('Received new file (%s) from %s (%s)', 
@@ -135,7 +147,7 @@ function receiveFile(file, socket) {
           return;
         }
 
-        createParts(user, socket, file, hash).then(function(parts) {
+        createParts(user, socket, hash).then(function(parts) {
           distributeParts(user, parts, hash);
         }).catch(function(err) {
           logger.error('Unable to save parts for file %s', hash);
@@ -143,11 +155,17 @@ function receiveFile(file, socket) {
         });
       }).catch(function (err) {
         logger.error('Unable to get clients for user %s', user.id);
+        logger.error(err);
       });
     });
   });
 }
 
+/**
+ * Handles the sockets receiving a new part
+ * @param {Object} file - The file object that was sent
+ * @param {Object} socket - The socket of the sender
+ */
 function receivePart(file, socket) {
   fs.mkdir("downloads/" + file.params.hash, function(){
     fs.writeFile("downloads/" + file.params.hash + "/" + file.name, 
@@ -170,9 +188,18 @@ function receivePart(file, socket) {
   });
 }
 
-function createParts(user, socket, file, hash) {
+/**
+ * Splits a file into multiple parts
+ * @param {Object} user - The owner of the file
+ * @param {Object} socket - The socket connected to the file
+ * @param {string} hash - The hash of the file to be split
+ */
+function createParts(user, socket, hash) {
   return new Promise(function(resolve, reject) {
     var userConnects = connections[user.id];
+
+    let inputFile = "downloads/full/" + hash;
+    let outputFile = "downloads/" + hash + "/split";
 
     fs.mkdir("downloads/" + hash, function(err) {
       if(err) {
@@ -181,38 +208,46 @@ function createParts(user, socket, file, hash) {
         return reject("Could not make the new parts directory", hash);
       }
 
-      var process = spawn('python', ["Tools/split_file.py", 
-        "downloads/full/" + hash, userConnects.length, "-o",
-        "downloads/" + hash + "/split"]);
+      fileManipulation.split(inputFile, userConnects.length, outputFile)
+      .then(function() {
+        //Subtract 1 to remove uploaded file
+        var chunks = fs.readdirSync('downloads/' + hash);
 
-        process.on('close', function (code) {
-          //Subtract 1 to remove uploaded file
-          var chunks = fs.readdirSync('downloads/' + hash);
+        // Check if MAC number matches chunks
+        if (chunks.length != userConnects.length) {
+          logger.error("Number of chunks did not match number" + 
+            "of MAC addresses for %s", hash);
+          socket.emit(messages.error.macNumber, 
+            {errorMessage: "Number of chunks did not match" + 
+            "number of MAC addresses"});
+          return reject(messages.error.macNumber);
+        }
 
-          // Check if MAC number matches chunks
-          if (chunks.length != userConnects.length) {
-            logger.error("Number of chunks did not match number" + 
-              "of MAC addresses for %s", hash);
-            socket.emit(messages.error.macNumber, 
-              {errorMessage: "Number of chunks did not match" + 
-              "number of MAC addresses"});
-            return reject(messages.error.macNumber);
-          }
-
-          resolve(chunks);
-        });
+        resolve(chunks);
+      })
+      .catch(function(err){
+        console.error("Couldn't split file %s", inputFile);
+        console.error(err);
+      });
     });
   });
 }
 
+/**
+ * Merges file parts back together
+ * @param {Object} request - The file download request
+ * @param {Object} user - The user requesting the file merge
+ */
 function mergeParts(request, user) {
   var userConnects = connections[user.id];
 
-  var process = spawn('python', ["Tools/merge_file.py", "downloads/" + 
-    request.hash + "/" + request.hash + "_1", 
-    request.parts, "-o", "downloads/" + request.hash + "/" + request.hash]);
+  //Merge the downloaded parts back into one file
+  let inputFile = "downloads/" + request.hash + "/" + request.hash + "_1";
+  let outputFile = "downloads/" + request.hash + "/" + request.hash;
+  fileManipulation.merge(inputFile, request.parts, outputFile)
+  .then(function() {
 
-  process.on('close', function (code) {
+    //Search for the origin connection
     var origin = request.origin;
     userConnects.forEach(function(connection) {
       if(connection.user.mac !== request.origin) return;
@@ -220,6 +255,7 @@ function mergeParts(request, user) {
       var delivery = dl.listen(connection.socket);
       delivery.connect();
 
+      //Get file information about the return file
       firebase.database().ref(tables.files)
       .child(user.id).child(request.hash)
       .once('value').then(function(snapshot) {
@@ -227,9 +263,11 @@ function mergeParts(request, user) {
 
         logger.info("Sending file %s to %s (%s)", 
           file.path, user.id, user.mac);
+
+        //Deliver the file to the user
         delivery.send({
           name: file.path,
-          path: "downloads/" + request.hash + "/" + request.hash,
+          path: outputFile,
           params: {
             mode: 'download'
           }
@@ -237,24 +275,37 @@ function mergeParts(request, user) {
       });
 
       delivery.on(messages.received.sendSuccess, function() {
+        //Remove the complete file from the server
         fse.remove("downloads/" + request.hash, function(err) {
           if(err) console.error("Error deleting hash folder");
         });
 
+        //Remove the routing information from the database
         firebase.database().ref(tables.routing)
-        .child(request.hash).remove();
+          .child(request.hash).remove();
+
         firebase.database().ref(tables.files)
-        .child(user.id).child(request.hash).remove();
+          .child(user.id).child(request.hash).remove();
       });
     });
+  })
+  .catch(function(err) {
+    logger.error("Couldn't merge file %s", request.hash);
+    logger.error(err);
   });
 }
 
+/**
+ * Distributes the file parts to the user clients
+ * @param {Object} user - The user to send it to
+ * @param {string[]} parts - The part names to send
+ * @param {stirng} hash - The file hash of the parts
+ */
 function distributeParts(user, parts, hash) {
   var userConnections = connections[user.id];
   var routingTable = {};
   // Send chunks
-  for (i = 0; i < parts.length; i++) {
+  for (let i = 0; i < parts.length; i++) {
     var delivery = dl.listen(userConnections[i].socket);
     delivery.connect();
     var partName = hash + "_" + (i+1);
@@ -281,13 +332,18 @@ function distributeParts(user, parts, hash) {
   firebase.database().ref(tables.routing).child(hash).set(routingTable);
 }
 
+/**
+ * Checks to make sure all MAC addresses are connected
+ * @param {string} id - The user's ID
+ * @param {string[]} referenceMACs - The MAC address list to compare to
+ */
 function checkMAC(id, referenceMACs) {
   var active = connections[id].map(function (conn) {
     return conn.user.mac
   });
 
   // Check if active and reference are the same
-  for (i = 0; i < referenceMACs.length; i++) {
+  for (let i = 0; i < referenceMACs.length; i++) {
     if (active.indexOf(referenceMACs[i]) === -1) {
       return false;
     }
