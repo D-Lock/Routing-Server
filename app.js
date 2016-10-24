@@ -1,6 +1,5 @@
 'use strict';
 
-var dl = require('delivery');
 var fs = require('fs');
 var mkdirp = require('mkdirp');
 var fse = require('fs-extra');
@@ -89,18 +88,16 @@ io.on('connection', function (socket) {
     });
   });
 
-  // Handle incomping parts
+  // Handle incoming parts
 
 
   // Listen for incoming for files - Create file mode
-  var delivery = dl.listen(socket);
-  delivery.on(messages.received.receiveSuccess, function (file) {
-    if(file.params.mode === 'upload'){
-      receiveFile(file, socket);
-    }
-    else if(file.params.mode === 'part'){
-      receivePart(file, socket);
-    }
+  socket.on(messages.file.receive, function(filePackage) {
+    receiveFile(filePackage, socket);
+  });
+
+  socket.on(messages.part.receive, function(filePackage) {
+    receivePart(filePackage, socket);
   });
 });
 
@@ -116,7 +113,10 @@ function receiveFile(file, socket) {
 
   var hash = (Math.random() + 1).toString(36).substr(2,32);
   mkdirp("downloads/full", function(){
-    fs.writeFile("downloads/full/" + hash, file.buffer, function (err) {
+    //Create a new Base64 buffer to write file from
+    var buffer = new Buffer(file.data, 'base64');
+
+    fs.writeFile("downloads/full/" + hash, buffer, function (err) {
       if (err) {
         logger.error('Could not write new upload %s', hash);
         logger.error(err);
@@ -125,12 +125,11 @@ function receiveFile(file, socket) {
 
       logger.debug('Saved new file with hash %s', hash);
       
-      //TODO: Get file size and type
       firebase.database().ref(tables.files).child(user.id).child(hash)
       .set({
         path: file.name,
-        size: 0, 
-        type: "txt"
+        size: file.size,
+        type: file.extension
       });
 
       // Load the data and act accordingly
@@ -234,6 +233,44 @@ function createParts(user, socket, hash) {
 }
 
 /**
+ * Sends a part of a file to a user
+ * @param {Object} socket - The socket to send the file to
+ * @param {string} partName - The name of the part file
+ * @param {string} partPath - The path of the part on the local machine
+ * @param {Object} params - Any extra paramaters to send with the part 
+ */
+function sendPart(socket, partName, partPath, params) {
+  var buffer = fs.readFileSync(partPath);
+  var data = buffer.toString('base64');
+
+  var filePackage = {
+    name: partName,
+    data: data,
+    params: params
+  };
+  socket.emit(messages.part.send, filePackage);
+}
+
+/**
+ * Sends a combined file to a user
+ * @param {Object} socket - The socket to send the file to
+ * @param {string} fileName - The name of the file
+ * @param {string} filePath - The path of the file on the local machine
+ * @param {Object} params - Any extra paramaters to send with the file
+ */
+function sendFile(socket, fileName, filePath, params) {
+  var buffer = fs.readFileSync(filePath);
+  var data = buffer.toString('base64');
+
+  var filePackage = {
+    name: fileName,
+    data: data,
+    params: params
+  };
+  socket.emit(messages.file.send, filePackage);
+}
+
+/**
  * Merges file parts back together
  * @param {Object} request - The file download request
  * @param {Object} user - The user requesting the file merge
@@ -252,9 +289,6 @@ function mergeParts(request, user) {
     userConnects.forEach(function(connection) {
       if(connection.user.mac !== request.origin) return;
 
-      var delivery = dl.listen(connection.socket);
-      delivery.connect();
-
       //Get file information about the return file
       firebase.database().ref(tables.files)
       .child(user.id).child(request.hash)
@@ -265,16 +299,10 @@ function mergeParts(request, user) {
           file.path, user.id, user.mac);
 
         //Deliver the file to the user
-        delivery.send({
-          name: file.path,
-          path: outputFile,
-          params: {
-            mode: 'download'
-          }
-        });
+        sendFile(connection.socket, file.path, outputFile, {});
       });
 
-      delivery.on(messages.received.sendSuccess, function() {
+      /*delivery.on(messages.received.sendSuccess, function() {
         //Remove the complete file from the server
         fse.remove("downloads/" + request.hash, function(err) {
           if(err) console.error("Error deleting hash folder");
@@ -286,7 +314,7 @@ function mergeParts(request, user) {
 
         firebase.database().ref(tables.files)
           .child(user.id).child(request.hash).remove();
-      });
+      });*/
     });
   })
   .catch(function(err) {
@@ -306,27 +334,20 @@ function distributeParts(user, parts, hash) {
   var routingTable = {};
   // Send chunks
   for (let i = 0; i < parts.length; i++) {
-    var delivery = dl.listen(userConnections[i].socket);
-    delivery.connect();
     var partName = hash + "_" + (i+1);
 
     logger.debug("Sending file part %s to %s (%s)", 
       partName, user.id, user.mac);
 
     // Try to send
-    delivery.send({
-      name: partName,
-      path: path.join(__dirname, "/downloads/", hash, parts[i]),
-      params: {
-        mode: "part"
-      }
-    });
+    let partPath = path.join(__dirname, "/downloads/", hash, parts[i]);
+    sendPart(userConnections[i].socket, partName, partPath);
     
     routingTable[userConnections[i].user.mac] = i+1;
     // If success, store routing info in database
-    delivery.on(messages.received.sendSuccess, function (uid) {
+    /*delivery.on(messages.received.sendSuccess, function (uid) {
       logger.debug("Successfully sent file part %s", partName);
-    });
+    });*/
   }
 
   firebase.database().ref(tables.routing).child(hash).set(routingTable);

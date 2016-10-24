@@ -22,12 +22,17 @@
       "sent": {
         "requestPart": "request.part"
       },
+      "file": {
+        "receive": "send.file",
+        "send": "send.file"
+      },
+      "part": {
+        "receive": "send.part",
+        "send": "send.part"
+      },
       "received": {
         "userInfo": "user.info",
-        "fileRequest": "request.file",
-        "receiveSuccess": "receive.success",
-        "sendStart": "send.start",
-        "sendSuccess": "send.success"
+        "fileRequest": "request.file"
       },
       "error": {
         "macNumber": "error.mac.num"
