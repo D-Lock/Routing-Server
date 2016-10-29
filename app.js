@@ -99,7 +99,45 @@ io.on('connection', function (socket) {
   socket.on(messages.part.receive, function(filePackage) {
     receivePart(filePackage, socket);
   });
+
+  // Listen for successful file sending
+  socket.on(messages.file.success, function(fileInfo) {
+    var user = users[socket.id];
+    fileTransferSuccess(user, fileInfo);
+  });
+
+  socket.on(messages.part.success, function (fileInfo) {
+    partTransferSuccess(fileInfo)
+  });
 });
+
+/**
+ * Handles when a file was successfully received by the client
+ * @param {Object} user - The user associated with the transfer
+ * @param {Object} fileInfo - The file information sent alongside the message
+ */
+function fileTransferSuccess(user, fileInfo) {
+  //Remove the complete file from the server
+  fse.remove("downloads/" + request.hash, function(err) {
+    if(err) console.error("Error deleting hash folder");
+  });
+
+  //Remove the routing information from the database
+  firebase.database().ref(tables.routing)
+    .child(request.hash).remove();
+
+  firebase.database().ref(tables.files)
+    .child(user.id).child(request.hash).remove();
+}
+
+/**
+ * Handles when a part was successfully received by the client
+ * @param {Object} fileInfo - The file information sent alongside the message
+ */
+function partTransferSuccess(fileInfo) {
+  //Log that the part was sent
+  logger.debug("Successfully sent file part %s", fileInfo.partName);
+}
 
 /**
  * Handles the sockets receiving a full file upload
@@ -299,22 +337,10 @@ function mergeParts(request, user) {
           file.path, user.id, user.mac);
 
         //Deliver the file to the user
-        sendFile(connection.socket, file.path, outputFile, {});
-      });
-
-      /*delivery.on(messages.received.sendSuccess, function() {
-        //Remove the complete file from the server
-        fse.remove("downloads/" + request.hash, function(err) {
-          if(err) console.error("Error deleting hash folder");
+        sendFile(connection.socket, file.path, outputFile, {
+          hash: request.hash
         });
-
-        //Remove the routing information from the database
-        firebase.database().ref(tables.routing)
-          .child(request.hash).remove();
-
-        firebase.database().ref(tables.files)
-          .child(user.id).child(request.hash).remove();
-      });*/
+      });
     });
   })
   .catch(function(err) {
@@ -344,10 +370,6 @@ function distributeParts(user, parts, hash) {
     sendPart(userConnections[i].socket, partName, partPath);
     
     routingTable[userConnections[i].user.mac] = i+1;
-    // If success, store routing info in database
-    /*delivery.on(messages.received.sendSuccess, function (uid) {
-      logger.debug("Successfully sent file part %s", partName);
-    });*/
   }
 
   firebase.database().ref(tables.routing).child(hash).set(routingTable);

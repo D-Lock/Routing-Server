@@ -24,11 +24,13 @@
       },
       "file": {
         "receive": "send.file",
-        "send": "send.file"
+        "send": "send.file",
+        "success": "receive.file"
       },
       "part": {
         "receive": "send.part",
-        "send": "send.part"
+        "send": "send.part",
+        "success": "receive.part"
       },
       "received": {
         "userInfo": "user.info",
