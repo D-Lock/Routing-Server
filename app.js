@@ -149,6 +149,9 @@ function receiveFile(file, socket) {
   logger.info('Received new file (%s) from %s (%s)', 
     file.name, user.id, user.mac);
 
+  //Send back a successful response
+  socket.emit(messages.file.success);
+
   var hash = (Math.random() + 1).toString(36).substr(2,32);
   mkdirp("downloads/full", function(){
     //Create a new Base64 buffer to write file from
@@ -204,6 +207,9 @@ function receiveFile(file, socket) {
  * @param {Object} socket - The socket of the sender
  */
 function receivePart(file, socket) {
+  //Send back a successful response
+  socket.emit(messages.part.success);
+
   fs.mkdir("downloads/" + file.params.hash, function(){
     fs.writeFile("downloads/" + file.params.hash + "/" + file.name, 
       file.buffer, function (err) {
