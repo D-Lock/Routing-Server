@@ -13,20 +13,33 @@ const tables = config.firebaseTables;
 const messages = config.socket.messages;
 
 const fileManipulation = require('./lib/fileManipulation.js');
+const authentication = require('./lib/authentication.js');
+const connections = require('./lib/connectionManager.js');
 
 var io = require('socket.io').listen(config.socket.port);
 
-var connections = {};
-var users = {};
 var requests = {};
 
 io.on('connection', function (socket) {
   logger.info('User has initiated connection %s', socket.handshake.address);
 
+  //If the user logs off again
+  socket.on('disconnect', function() {
+    if(authentication.isAuthenticated(socket)) {
+      var user = authentication.getUserBySocket(socket);
+      logger.info('User %s (%s) has disconnected', 
+        user.id, user.mac);
+
+      connections.removeConnectionBySocket(user);
+      authentication.removeUserBySocket(socket);
+    }
+  });
+
+
   // Process user info
-  socket.on(messages.received.userInfo, function (newUser) {
+  socket.on(messages.authentication.userInfo, function (newUser) {
     // Store details for this connection
-    users[socket.id] = newUser;
+    authentication.addUserSocket(newUser, socket);
 
     var newConn = {
       user: newUser,
@@ -35,19 +48,25 @@ io.on('connection', function (socket) {
     logger.info('User %s (%s) has identified themselves', 
       newUser.id, newUser.mac);
 
-    if (newUser.id in connections) {
-      connections[newUser.id].push(newConn);
-    }
-    else {
-      connections[newUser.id] = [newConn];
+    connections.addUserConnection(newUser, newConn);
+  });
+
+  socket.on(messages.authentication.userOut, function () {
+    if(authentication.isAuthenticated(socket)) {
+      var user = authentication.getUserBySocket(socket);
+      logger.info('User %s (%s) has unidentified themselves', 
+        user.id, user.mac);
+
+      connections.removeConnectionBySocket(user);
+      authentication.removeUserBySocket(socket);
     }
   });
 
-  // TODO handle disconnect - remove MAC from connections
+  // TODO: handle disconnect - remove MAC from connections
 
   // Handle file requests
-  socket.on(messages.received.fileRequest, function(hash) {
-    var user = users[socket.id];
+  socket.on(messages.file.request, function(hash) {
+    var user = getUserBySocket(socket);
     logger.info('User %s has requested file %s', user.id, hash);
     
     firebase.database().ref(tables.routing).child(hash).once('value')
@@ -56,7 +75,7 @@ io.on('connection', function (socket) {
       var val = snapshot.val();
       var macs = Object.keys(val);
       // Verify that we have a connection with all required macs
-      var userConnects = connections[user.id];
+      var userConnects = connections.getConnections(user);
       if(checkMAC(user.id, macs)){
         var request = {
           origin: user.mac,
@@ -90,7 +109,6 @@ io.on('connection', function (socket) {
 
   // Handle incoming parts
 
-
   // Listen for incoming for files - Create file mode
   socket.on(messages.file.receive, function(filePackage) {
     receiveFile(filePackage, socket);
@@ -102,7 +120,7 @@ io.on('connection', function (socket) {
 
   // Listen for successful file sending
   socket.on(messages.file.success, function(fileInfo) {
-    var user = users[socket.id];
+    var user = getUserBySocket(socket);
     fileTransferSuccess(user, fileInfo);
   });
 
@@ -145,7 +163,7 @@ function partTransferSuccess(fileInfo) {
  * @param {Object} socket - The socket of the sender
  */
 function receiveFile(file, socket) {
-  var user = users[socket.id];
+  var user = getUserBySocket(socket);
   logger.info('Received new file (%s) from %s (%s)', 
     file.name, user.id, user.mac);
 
@@ -220,7 +238,7 @@ function receivePart(file, socket) {
       }
 
       logger.debug('Received part %s', file.name);
-      var user = users[socket.id];
+      var user = getUserBySocket(socket);
       var request = requests[file.params.hash];
 
       request.current++;
@@ -239,7 +257,7 @@ function receivePart(file, socket) {
  */
 function createParts(user, socket, hash) {
   return new Promise(function(resolve, reject) {
-    var userConnects = connections[user.id];
+    var userConnects = connections.getConnections(user);
 
     let inputFile = "downloads/full/" + hash;
     let outputFile = "downloads/" + hash + "/split";
@@ -320,7 +338,7 @@ function sendFile(socket, fileName, filePath, params) {
  * @param {Object} user - The user requesting the file merge
  */
 function mergeParts(request, user) {
-  var userConnects = connections[user.id];
+  var userConnects = connections.getConnections(user);
 
   //Merge the downloaded parts back into one file
   let inputFile = "downloads/" + request.hash + "/" + request.hash + "_1";
@@ -362,7 +380,7 @@ function mergeParts(request, user) {
  * @param {stirng} hash - The file hash of the parts
  */
 function distributeParts(user, parts, hash) {
-  var userConnections = connections[user.id];
+  var userConnections = connections.getConnections(user);
   var routingTable = {};
   // Send chunks
   for (let i = 0; i < parts.length; i++) {
@@ -379,24 +397,4 @@ function distributeParts(user, parts, hash) {
   }
 
   firebase.database().ref(tables.routing).child(hash).set(routingTable);
-}
-
-/**
- * Checks to make sure all MAC addresses are connected
- * @param {string} id - The user's ID
- * @param {string[]} referenceMACs - The MAC address list to compare to
- */
-function checkMAC(id, referenceMACs) {
-  var active = connections[id].map(function (conn) {
-    return conn.user.mac
-  });
-
-  // Check if active and reference are the same
-  for (let i = 0; i < referenceMACs.length; i++) {
-    if (active.indexOf(referenceMACs[i]) === -1) {
-      return false;
-    }
-  }
-
-  return true;
 }
