@@ -35,7 +35,9 @@
       },
       "authentication": {
         "userInfo": "user.info",
-        "userOut": "user.out"
+        "userOut": "user.out",
+        "userConnected": "user.connected",
+        "userDisconnected": "user.disconnected"
       },
       "error": {
         "macNumber": "error.mac.num"

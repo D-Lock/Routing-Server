@@ -32,6 +32,12 @@ io.on('connection', function (socket) {
 
       connections.removeConnectionBySocket(user);
       authentication.removeUserBySocket(socket);
+
+      if(connections.hasConnections(user)) {
+        connections.getConnections(user).forEach(function(conn) {
+          conn.socket.emit(messages.authentication.userDisconnected);
+        });
+      }
     }
   });
 
@@ -49,6 +55,15 @@ io.on('connection', function (socket) {
       newUser.id, newUser.mac);
 
     connections.addUserConnection(newUser, newConn);
+
+    checkAllOnline(newUser).then(function(allOnline) {
+      if(allOnline) {
+        logger.info('User %s has connected all devices', newUser.id);
+        connections.getConnections(newUser).forEach(function(conn) {
+          conn.socket.emit(messages.authentication.userConnected);
+        });
+      }
+    });
   });
 
   socket.on(messages.authentication.userOut, function () {
@@ -128,6 +143,69 @@ io.on('connection', function (socket) {
     partTransferSuccess(fileInfo)
   });
 });
+
+/**
+ * Determines whether all devices for a given user are online
+ * @param {Object} user - The user to check for
+ */
+function checkAllOnline(user) {
+  return new Promise(function(resolve, reject) {
+    var online = getOnlineMacAddresses(user);
+    getAllMacAddresses(user).then(function(all) {
+      //If they are of different lengths, immediately return false
+      if(all.length !== online.length) {
+        resolve(false); 
+      }
+
+      //Remove each of the MAC addresses from online
+      all.forEach(function(val) {
+        var index = online.indexOf(val);
+        if(index === -1) {
+          resolve(false);
+        }
+
+        online.splice(index, 1);
+      });
+
+      //If online is now empty, they have the same values
+      resolve(online.length === 0);
+    }).catch(function(err) {
+      logger.error(err);
+      reject();
+    });
+  });
+}
+
+/**
+ * Gets all online mac addresses associated with a given user
+ * @param {Object} user - The user to check for
+ */
+function getOnlineMacAddresses(user) {
+  var addresses = [];
+  var userConnections = connections.getConnections(user);
+  userConnections.forEach(function(connection) {
+    addresses.push(connection.user.mac);
+  });
+  return addresses;
+}
+
+/**
+ * Gets all the mac addresses associated with a given user
+ * @param {Object} user - The user to check for
+ */
+function getAllMacAddresses(user) {
+  return new Promise(function(resolve, reject) {
+    firebase.database().ref(tables.clients).child(user.id).child('all')
+    .once('value').then(function(snapshot) {
+      var clientsObj = snapshot.val();
+      var clientMacs = Object.keys(clientsObj).map(function(key) {
+        return clientsObj[key].address;
+      });
+
+      resolve(clientMacs);
+    });
+  });
+}
 
 /**
  * Handles when a file was successfully received by the client
