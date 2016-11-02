@@ -25,20 +25,7 @@ io.on('connection', function (socket) {
 
   //If the user logs off again
   socket.on('disconnect', function() {
-    if(authentication.isAuthenticated(socket)) {
-      var user = authentication.getUserBySocket(socket);
-      logger.info('User %s (%s) has disconnected', 
-        user.id, user.mac);
-
-      connections.removeConnectionBySocket(user);
-      authentication.removeUserBySocket(socket);
-
-      if(connections.hasConnections(user)) {
-        connections.getConnections(user).forEach(function(conn) {
-          conn.socket.emit(messages.authentication.userDisconnected);
-        });
-      }
-    }
+    disconnectSocket(socket);
   });
 
 
@@ -67,14 +54,7 @@ io.on('connection', function (socket) {
   });
 
   socket.on(messages.authentication.userOut, function () {
-    if(authentication.isAuthenticated(socket)) {
-      var user = authentication.getUserBySocket(socket);
-      logger.info('User %s (%s) has unidentified themselves', 
-        user.id, user.mac);
-
-      connections.removeConnectionBySocket(user);
-      authentication.removeUserBySocket(socket);
-    }
+    disconnectSocket(socket);
   });
 
   // TODO: handle disconnect - remove MAC from connections
@@ -143,6 +123,27 @@ io.on('connection', function (socket) {
     partTransferSuccess(fileInfo)
   });
 });
+
+/**
+ * Logs a socket out, and notifies other connections
+ * @param {Object} socket - The socket that is logging out
+ */
+function disconnectSocket(socket) {
+  if(authentication.isAuthenticated(socket)) {
+    var user = authentication.getUserBySocket(socket);
+    logger.info('User %s (%s) has disconnected', 
+      user.id, user.mac);
+
+    connections.removeConnectionBySocket(user, socket);
+    authentication.removeUserBySocket(socket);
+
+    if(connections.hasConnections(user)) {
+      connections.getConnections(user).forEach(function(conn) {
+        conn.socket.emit(messages.authentication.userDisconnected);
+      });
+    }
+  }
+}
 
 /**
  * Determines whether all devices for a given user are online
