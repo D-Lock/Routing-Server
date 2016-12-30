@@ -240,7 +240,7 @@ function getAllMacAddresses(user) {
  */
 function fileTransferSuccess(user, fileInfo) {
   //Remove the complete file from the server
-  fse.remove("downloads/" + request.hash, function(err) {
+  fse.remove("downloads/" + fileInfo.hash, function(err) {
     if(err) {
       logger.error("Error deleting hash folder");
     }
