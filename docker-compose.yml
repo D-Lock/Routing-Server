@@ -5,6 +5,7 @@ services:
     build: .
     volumes:
       - "./app:/usr/src/app"
+      - "./app/downloads:/usr/src/app/downloads"
     ports:
       - "1337:1337"
     links:

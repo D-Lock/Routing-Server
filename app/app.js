@@ -105,15 +105,15 @@ io.on('connection', function (socket) {
               val[entry.client.mac], entry.client.id,
               entry.client.mac);
 
-            socket.broadcast.to(entry.socket).emit(messages.sent.requestPart, {
+            io.to(entry.socket).emit(messages.sent.requestPart, {
               fileName: hash + '_' + val[entry.client.mac],
               hash: hash,
-              userId: user.id
+              userId: entry.client.id
               });
           });
         });
       }).catch(function() {
-        return logger.error('Could not match MAC addresses for %s', user.id);
+        return logger.error('Could not match MAC addresses for %s', client.id);
       })
     })
     .catch(function(err) {
@@ -248,10 +248,10 @@ function fileTransferSuccess(user, fileInfo) {
 
   //Remove the routing information from the database
   firebase.database().ref(tables.routing)
-    .child(request.hash).remove();
+    .child(fileInfo.hash).remove();
 
   firebase.database().ref(tables.files)
-    .child(user).child(request.hash).remove();
+    .child(user).child(fileInfo.hash).remove();
 }
 
 /**
@@ -302,7 +302,7 @@ function receiveFile(file, socket) {
       .once('value').then(function (snapshot) {
         var val = snapshot.val();
         var refmacs = Object.keys(val.all).map(function (key) {
-          return val.all[key];
+          return val.all[key].address;
         });
 
         clients.checkMAC(client.id, refmacs).then(function(){
@@ -315,7 +315,7 @@ function receiveFile(file, socket) {
         })
         .catch(function(){
           logger.error('Could not match MAC addresses for %s',
-            user.id);
+            client.id);
           return;
         });
       }).catch(function (err) {
@@ -336,8 +336,10 @@ function receivePart(file, socket) {
   socket.emit(messages.part.success);
 
   fs.mkdir("downloads/" + file.params.hash, function(){
+    var buffer = new Buffer(file.data, 'base64');
+
     fs.writeFile("downloads/" + file.params.hash + "/" + file.name,
-      file.buffer, function (err) {
+      buffer, function (err) {
       if (err) {
         logger.error('Unable to receive part %s', file.params.hash);
         logger.error(err);
@@ -364,8 +366,8 @@ function receivePart(file, socket) {
 function createParts(user, hash) {
   return new Promise(function(resolve, reject) {
     clients.getClients(user).then(function(userClients) {
-      let inputFile = "downloads/full/" + hash;
-      let outputFile = "downloads/" + hash + "/split";
+      var inputFile = "downloads/full/" + hash;
+      var outputFile = "downloads/" + hash + "/split";
 
       fs.mkdir("downloads/" + hash, function(err) {
         if(err) {
@@ -381,7 +383,7 @@ function createParts(user, hash) {
 
           // Check if MAC number matches chunks
           if (chunks.length != userClients.length) {
-            logger.error("Number of chunks did not match number" +
+            logger.error("Number of chunks did not match number " +
               "of MAC addresses for %s", hash);
             return reject(messages.error.macNumber);
           }
