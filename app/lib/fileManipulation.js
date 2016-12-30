@@ -11,7 +11,7 @@ module.exports = {
    */
   split: function(inputFile, parts, outputFile) {
     return new Promise(function(resolve, reject) {
-      var process = spawn('python3', ["Tools/split_file.py", 
+      var process = spawn('python3', ["tools/split_file.py", 
         inputFile, parts, "-o",
         outputFile]);
         
@@ -34,7 +34,7 @@ module.exports = {
   merge: function(inputPath, parts, outputFile) {
     return new Promise(function(resolve, reject) {
       //Create the spawn process
-      var process = spawn('python3', ["Tools/merge_file.py", inputPath, 
+      var process = spawn('python3', ["tools/merge_file.py", inputPath, 
         parts, "-o", outputFile]);
 
       process.on('close', function (code) {
