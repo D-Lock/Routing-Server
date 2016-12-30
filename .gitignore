@@ -4,3 +4,5 @@ node_modules/
 downloads/
 logs/
 routing-server.sublime-workspace
+npm-debug.log
+data/

@@ -16,6 +16,10 @@
       "routing": "routing"
     }
   },
+  "redis": {
+    "host": "redis",
+    "port": 6379
+  },
   "socket": {
     "port": 1337,
     "messages": {
@@ -34,8 +38,8 @@
         "success": "receive.part"
       },
       "authentication": {
-        "userInfo": "user.info",
-        "userOut": "user.out",
+        "clientInfo": "client.info",
+        "clientOut": "client.out",
         "userConnected": "user.connected",
         "userDisconnected": "user.disconnected"
       },

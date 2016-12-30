@@ -1,0 +1,17 @@
+version: '2'
+
+services:
+  routing-server:
+    build: .
+    volumes:
+      - "./app:/usr/src/app"
+    ports:
+      - "1337:1337"
+    links:
+      - "db:redis"
+
+  db:
+    image: redis:latest
+    command: redis-server
+    volumes:
+      - ./data:/data
