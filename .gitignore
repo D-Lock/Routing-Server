@@ -6,3 +6,6 @@ logs/
 routing-server.sublime-workspace
 npm-debug.log
 data/
+.build.env
+*.pyc
+build/docker-compose*

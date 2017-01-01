@@ -3,16 +3,25 @@ version: '2'
 services:
   routing-server:
     build: .
+    cpu_shares: 10
+    mem_limit: 524288000 # 500 MiB
     volumes:
-      - "./app:/usr/src/app"
-      - "./app/downloads:/usr/src/app/downloads"
+      - app:/usr/src/app
     ports:
-      - "1337:1337"
+      - 1337
     links:
-      - "db:redis"
+      - db:redis
 
   db:
     image: redis:latest
     command: redis-server
+    cpu_shares: 10
+    mem_limit: 104857600 # 500 MiB
     volumes:
-      - ./data:/data
+      - data:/data
+
+volumes:
+  data: 
+    external: true
+  app: 
+    external: true

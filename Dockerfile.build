@@ -1,0 +1,37 @@
+FROM ubuntu:latest
+
+RUN uname -r
+
+RUN apt-get update
+RUN apt-get install -y \
+  curl \
+  python3 \
+  python-yaml \
+  apt-transport-https \
+  ca-certificates \
+  && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+RUN apt-key adv \
+  --keyserver hkp://ha.pool.sks-keyservers.net:80 \
+  --recv-keys 58118E89F3A912897C070ADBF76221572C52609D \
+  && echo "deb https://apt.dockerproject.org/repo ubuntu-xenial main" | tee /etc/apt/sources.list.d/docker.list
+
+RUN apt-get update && apt-cache policy docker-engine && apt-get install -y docker-engine
+
+# Start docker daemon
+RUN service docker start
+
+# Install docker compose
+RUN curl -L "https://github.com/docker/compose/releases/download/1.9.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose \
+  && chmod +x /usr/local/bin/docker-compose \
+  && docker-compose --version
+
+
+# Install the ECS-CLI
+RUN curl -o /usr/local/bin/ecs-cli https://s3.amazonaws.com/amazon-ecs-cli/ecs-cli-linux-amd64-latest \
+  && chmod +x /usr/local/bin/ecs-cli \
+  && ecs-cli --version
+
+WORKDIR /usr/src
+
+CMD [ "bash", "build.sh" ]
