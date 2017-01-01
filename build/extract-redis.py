@@ -34,7 +34,11 @@ if "REDIS_PORT" not in os.environ:
     redis_port = 6379
 else:
     redis_port = os.environ["REDIS_PORT"]
-compose_file.services[redis_service]['ports'].append(redis_port)
+if "REDIS_EXTERNAL_PORT" not in os.environ:
+    redis_external = 32770
+else:
+    redis_external = os.environ["REDIS_EXTERNAL_PORT"]
+compose_file.services[redis_service]['ports'].append("{}:{}".format(redis_external, redis_port))
 
 # Write the new docker-compose.yml file.
 print("Writing Redis composer back to the file")
