@@ -90,7 +90,7 @@ module.exports = function(_redis, _logger) {
     /**
      * Checks to make sure all MAC addresses are connected
      * @param {String} user - The user id to check against
-     * @param {string[]} referenceMACs - The MAC address list to compare to
+     * @param {String[]} referenceMACs - The MAC address list to compare to
      */
     checkMAC: function(user, referenceMACs) {
       var self = this;

@@ -26,14 +26,13 @@ var subClient = redis.createClient(config.redis.port, config.redis.host, {return
 var fileManipulation = require('./lib/fileManipulation.js');
 var authentication = require('./lib/authentication.js');
 var clients = require('./lib/clientManager.js')(redisClient, logger);
+var requests = require('./lib/requestManager.js')(redisClient, logger);
 
 var adapter = require('socket.io-redis');
 io.adapter(adapter({ pubClient: pubClient, subClient: subClient }));
 
 logger.info('Server has started listening on port %s', config.socket.port);
 logger.info('Redis server connected on %s:%s', config.redis.host, config.redis.port);
-
-var requests = {};
 
 io.of('/').adapter.on('error', throwToLog);
 
@@ -91,19 +90,24 @@ io.on('connection', function (socket) {
       // Verify that we have a connection with all required macs
       clients.checkMAC(client.id, macs).then(function() {
         var request = {
-          origin: client.mac,
+          origin: socket.id,
           hash: hash,
           parts: macs.length,
           current: 0
         };
 
-        requests[hash] =  request;
+        requests.addRequest(hash, request);
 
         clients.getClients(client.id).then(function(userClients){
           userClients.forEach(function(entry){
-            logger.debug('Sent part %s to user %s (%s)',
-              val[entry.client.mac], entry.client.id,
-              entry.client.mac);
+            // This file has not been striped to the given computer
+            if(macs.indexOf(entry.client.mac) === -1) {
+              console.log("returned");
+              return;
+            }
+
+            logger.info('Sent part request to user %s (%s)',
+              entry.client.id, entry.client.mac);
 
             io.to(entry.socket).emit(messages.sent.requestPart, {
               fileName: hash + '_' + val[entry.client.mac],
@@ -112,7 +116,7 @@ io.on('connection', function (socket) {
               });
           });
         });
-      }).catch(function() {
+      }).catch(function(ex) {
         return logger.error('Could not match MAC addresses for %s', client.id);
       })
     })
@@ -348,12 +352,14 @@ function receivePart(file, socket) {
 
       logger.debug('Received part %s', file.name);
       var client = authentication.getClientBySocket(socket);
-      var request = requests[file.params.hash];
-
-      request.current++;
-      if(request.current === request.parts){
-        mergeParts(request, client.id);
-      }
+      requests.getRequest(file.params.hash).then(function(request) {
+        request.current++;
+        if(request.current === request.parts){
+          mergeParts(request, client.id);
+        }
+        // Save the new request back to the database
+        requests.addRequest(file.params.hash, request);
+      });
     });
   });
 }
@@ -449,25 +455,18 @@ function mergeParts(request, user) {
     let outputFile = "downloads/" + request.hash + "/" + request.hash;
     fileManipulation.merge(inputFile, request.parts, outputFile)
     .then(function() {
+      //Get file information about the return file
+      firebase.database().ref(tables.files)
+      .child(user).child(request.hash)
+      .once('value').then(function(snapshot) {
+        var file = snapshot.val();
 
-      //Search for the origin connection
-      var origin = request.origin;
-      userClients.forEach(function(entry) {
-        if(entry.client.mac !== request.origin) return;
+        logger.info("Sending file %s to %s (%s)",
+          file.path, user);
 
-        //Get file information about the return file
-        firebase.database().ref(tables.files)
-        .child(user).child(request.hash)
-        .once('value').then(function(snapshot) {
-          var file = snapshot.val();
-
-          logger.info("Sending file %s to %s (%s)",
-            file.path, user, entry.client.mac);
-
-          //Deliver the file to the user
-          sendFile(entry.socket, file.path, outputFile, {
-            hash: request.hash
-          });
+        //Deliver the file to the user
+        sendFile(request.origin, file.path, outputFile, {
+          hash: request.hash
         });
       });
     })
