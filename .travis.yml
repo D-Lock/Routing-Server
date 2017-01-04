@@ -13,7 +13,7 @@ script: npm run test
 
 after_success:
   - cd ..
-  - build/travis_deploy.sh
+  - travis_deploy.sh
 
 cache:
   directories:
