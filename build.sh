@@ -12,6 +12,9 @@ python build/build-tag-push.py
 # For fixing YAML scripts made using PyYAML
 sh build/fixup-yaml.sh
 
+# Push the environment variables
+python3 build/env-s3.py
+
 # Deploy Redis separately for ambassador
 mkdir -p $REDIS_BUILD_PATH
 export COMPOSE_FILE=$REDIS_BUILD_PATH/$REDIS_BUILD_FILE

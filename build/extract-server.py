@@ -22,6 +22,8 @@ compose_file = ComposeFile(sys.argv[1])
 for service_name, service in compose_file.services.items():
     if 'redis' in service['image']:
         redis_service = service_name
+    if 'routing-server' in service['image']:
+        routing_service = service_name
 
 # Modify redis service
 # Make into ambassador
@@ -33,6 +35,21 @@ else:
     redis_port = os.environ["REDIS_PORT"]
 command = "{} {} {}".format(redis_port, sys.argv[3], sys.argv[4])
 compose_file.services[redis_service]['command'] = command
+
+# Remove any ports from development
+del compose_file.services[redis_service]['ports']
+
+# Remove mounting volumes from development
+del compose_file.services[routing_service]['volumes']
+
+# Write environment variables to routing-server
+compose_file.services[routing_service]['environment'] = []
+compose_file.services[routing_service]['environment'].append('ENV_BUCKET')
+compose_file.services[routing_service]['environment'].append('KMS_ALIAS')
+
+# Modify the command to run using s3 .env
+command = compose_file.services[routing_service]['command']
+command = compose_file.services[routing_service]['command'] = 'bash bin/in_s3_env.sh {}'.format(command)
 
 # Write the new docker-compose.yml file.
 print("Writing Routing-Server composer back to the file")

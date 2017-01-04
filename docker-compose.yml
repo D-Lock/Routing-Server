@@ -3,6 +3,7 @@ version: '2'
 services:
   routing-server:
     build: .
+    command: "npm start"
     cpu_shares: 10
     mem_limit: 524288000 # 500 MiB
     volumes:
@@ -13,12 +14,14 @@ services:
       - db:redis
 
   db:
-    image: redis:latest
-    command: redis-server
+    image: dloc/dloc-redis:latest
+    command: "start-server.sh"
     cpu_shares: 10
     mem_limit: 104857600 # 500 MiB
     volumes:
       - data:/data
+    logging:
+      driver: syslog
 
 volumes:
   data: 

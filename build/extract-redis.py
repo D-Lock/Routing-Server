@@ -40,6 +40,15 @@ else:
     redis_external = os.environ["REDIS_EXTERNAL_PORT"]
 compose_file.services[redis_service]['ports'].append("{}:{}".format(redis_external, redis_port))
 
+# Add environment variables
+compose_file.services[redis_service]['environment'] = []
+compose_file.services[redis_service]['environment'].append('ENV_BUCKET')
+compose_file.services[redis_service]['environment'].append('KMS_ALIAS')
+
+# Modify the command to run using s3 .env
+command = compose_file.services[redis_service]['command']
+command = compose_file.services[redis_service]['command'] = 'bash /usr/bin/in_s3_env.sh {}'.format(command)
+
 # Write the new docker-compose.yml file.
 print("Writing Redis composer back to the file")
 

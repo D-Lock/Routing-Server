@@ -19,9 +19,9 @@ var redis = require('redis');
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 
-var redisClient = redis.createClient(config.redis.port, config.redis.host);
-var pubClient = redis.createClient(config.redis.port, config.redis.host, {return_buffers: true, auth_pass: ''});
-var subClient = redis.createClient(config.redis.port, config.redis.host, {return_buffers: true, auth_pass: ''});
+var redisClient = redis.createClient(config.redis.port, config.redis.host, {auth_pass: process.env.REDIS_PASSWORD});
+var pubClient = redis.createClient(config.redis.port, config.redis.host, {return_buffers: true, auth_pass: process.env.REDIS_PASSWORD});
+var subClient = redis.createClient(config.redis.port, config.redis.host, {return_buffers: true, auth_pass: process.env.REDIS_PASSWORD});
 
 var fileManipulation = require('./lib/fileManipulation.js');
 var authentication = require('./lib/authentication.js');
