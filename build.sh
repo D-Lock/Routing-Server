@@ -37,4 +37,3 @@ python build/extract-server.py $COMPOSE_FILE $AMBASSADOR_IMAGE $REDIS_INSTANCE_I
 
 # Start the new server
 ecs-cli compose --file $SERVER_BUILD_PATH/$SERVER_BUILD_FILE --project-name $SERVER_PROJECT_NAME up
-ecs-cli scale --capability-iam --size $SERVER_SCALE
