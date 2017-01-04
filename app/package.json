@@ -18,7 +18,8 @@
   },
   "devDependencies": {},
   "scripts": {
-    "start": "node app.js"
+    "start": "node app.js",
+    "test": "echo There are currently no tests"
   },
   "repository": {
     "type": "git",

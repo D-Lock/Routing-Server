@@ -7,9 +7,12 @@ node_js:
   - "6.1"
 
 install:
-  - cd app && npm install && cd ..
+  - cd app && npm install
+
+script: npm run test
 
 after_success:
+  - cd ..
   - build/travis_deploy.sh
 
 cache:
