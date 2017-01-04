@@ -29,4 +29,5 @@ services:
       - AWS_DEFAULT_REGION
       - ENV_BUCKET
       - KMS_ALIAS
+      - "VERSION=${TRAVIS_COMMIT}""
     privileged: true

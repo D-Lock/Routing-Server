@@ -25,6 +25,9 @@ if "VERSION" not in os.environ:
 else:
     version = os.environ["VERSION"]
 
+# Shorten tag to 8 character version
+version = version[:8]
+
 # Execute "docker-compose build" and abort if it fails.
 subprocess.check_call(["docker-compose", "-f", "docker-compose.yml", "build"])
 
