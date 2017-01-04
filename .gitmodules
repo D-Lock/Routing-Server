@@ -1,3 +1,3 @@
-[submodule "Tools"]
+[submodule "app/tools"]
 	path = app/tools
-	url = git@github.com:D-Lock/Tools.git
+	url = https://github.com/D-Lock/Tools.git
