@@ -12,9 +12,6 @@ python build/build-tag-push.py
 # For fixing YAML scripts made using PyYAML
 sh build/fixup-yaml.sh
 
-# Push the environment variables
-python3 build/env-s3.py
-
 # Deploy Redis separately for ambassador
 mkdir -p $REDIS_BUILD_PATH
 export COMPOSE_FILE=$REDIS_BUILD_PATH/$REDIS_BUILD_FILE
@@ -40,3 +37,4 @@ python build/extract-server.py $COMPOSE_FILE $AMBASSADOR_IMAGE $REDIS_INSTANCE_I
 
 # Start the new server
 ecs-cli compose --file $SERVER_BUILD_PATH/$SERVER_BUILD_FILE --project-name $SERVER_PROJECT_NAME up
+ecs-cli scale --capability-iam --size $SERVER_SCALE

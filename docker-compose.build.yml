@@ -8,6 +8,24 @@ services:
     volumes:
       - ".:/usr/src"
       - "/var/run/docker.sock:/var/run/docker.sock"
-    env_file:
-      - .build.env
+    environment: :
+      - DOCKER_REGISTRY
+      - DOCKER_USERNAME
+      - DOCKER_PASSWORD
+      - COMPOSE_FILE_PATH
+      - COMPOSE_FILE_NAME
+      - SERVER_PROJECT_NAME
+      - SERVER_SCALE
+      - SERVER_BUILD_PATH
+      - SERVER_BUILD_FILE
+      - REDIS_PROJECT_NAME
+      - REDIS_BUILD_PATH
+      - REDIS_BUILD_FILE
+      - REDIS_PORT
+      - REDIS_EXTERNAL_PORT
+      - AMBASSADOR_IMAGE
+      - ECS_CLUSTER_NAME
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_DEFAULT_REGION
     privileged: true
