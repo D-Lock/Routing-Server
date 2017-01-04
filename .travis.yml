@@ -10,7 +10,8 @@ install:
   - cd app && npm install
 
 after_success:
-  - sh build/travis_deploy.sh
+  - chmod +x build/travis_deploy.sh
+  - build/travis_deploy.sh
 
 cache:
   directories:
