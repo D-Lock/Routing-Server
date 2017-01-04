@@ -2,9 +2,8 @@ version: '2'
 
 services:
   build-service:
-    build: 
-      context: .
-      dockerfile: Dockerfile.build
+    # Made using Dockerfile.build
+    image: dloc/dloc-build:latest
     volumes:
       - ".:/usr/src"
       - "/var/run/docker.sock:/var/run/docker.sock"
