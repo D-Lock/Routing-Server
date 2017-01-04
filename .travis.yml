@@ -2,5 +2,16 @@ sudo: required
 services:
   - docker
 
+language: node_js
+node_js:
+  - "6.1"
+
+install:
+  - cd app && npm install
+
 after_success:
   - build/travis_deploy.sh
+
+cache:
+  directories:
+    - app/node_modules
