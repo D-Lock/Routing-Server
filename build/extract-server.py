@@ -49,7 +49,7 @@ compose_file.services[routing_service]['environment'].append('KMS_ALIAS')
 
 # Modify the command to run using s3 .env
 command = compose_file.services[routing_service]['command']
-command = compose_file.services[routing_service]['command'] = 'bash bin/in_s3_env.sh {}'.format(command)
+command = compose_file.services[routing_service]['command'] = 'bash /usr/bin/in_s3_env.sh {}'.format(command)
 
 # Write the new docker-compose.yml file.
 print("Writing Routing-Server composer back to the file")
