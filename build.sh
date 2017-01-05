@@ -21,7 +21,7 @@ sh build/fixup-yaml.sh
 
 # Launch ECS Redis instance
 ecs-cli configure --cluster $ECS_CLUSTER_NAME
-ecs-cli compose service --file $REDIS_BUILD_PATH/$REDIS_BUILD_FILE --project-name $REDIS_PROJECT_NAME up
+ecs-cli compose --file $REDIS_BUILD_PATH/$REDIS_BUILD_FILE --project-name $REDIS_PROJECT_NAME service up
 
 # Take the IP address of the Redis instance
 REDIS_ADDRESS=$(ecs-cli ps | sed -sn 2p | awk '{print $3}')
@@ -36,5 +36,5 @@ cp $ORIGINAL_COMPOSE $COMPOSE_FILE
 python build/extract-server.py $COMPOSE_FILE $AMBASSADOR_IMAGE $REDIS_INSTANCE_IP $REDIS_INSTANCE_PORT
 
 # Start the new server
-ecs-cli compose service --file $SERVER_BUILD_PATH/$SERVER_BUILD_FILE --project-name $SERVER_PROJECT_NAME up
-ecs-cli compose service --file $SERVER_BUILD_PATH/$SERVER_BUILD_FILE --project-name $SERVER_PROJECT_NAME scale $SERVER_SCALE
+ecs-cli compose --file $SERVER_BUILD_PATH/$SERVER_BUILD_FILE --project-name $SERVER_PROJECT_NAME service up
+ecs-cli compose --file $SERVER_BUILD_PATH/$SERVER_BUILD_FILE --project-name $SERVER_PROJECT_NAME service scale $SERVER_SCALE
