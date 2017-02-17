@@ -1,0 +1,24 @@
+version: '2'
+
+services:
+  routing-server:
+    build: .
+    command: "npm start"
+    cpu_shares: 10
+    mem_limit: 524288000 # 500 MiB
+    volumes:
+      - ./app:/usr/src/app
+    ports:
+      - 1337:1337
+    links:
+      - db:redis
+
+  db:
+    image: dloc/dloc-redis:latest
+    command: "start-server.sh"
+    cpu_shares: 10
+    mem_limit: 104857600 # 500 MiB
+    ports:
+      - 6379:6379
+    volumes:
+      - ./data:/data
